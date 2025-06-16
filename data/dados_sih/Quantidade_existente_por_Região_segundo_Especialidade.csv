@@ -1,0 +1,23 @@
+CNES - Recursos Físicos - Hospitalar - Leitos de internação - Brasil
+Quantidade existente por Especialidade e Região
+Período:Abr/2025
+"Especialidade";"1 Região Norte";"2 Região Nordeste";"3 Região Sudeste";"4 Região Sul";"5 Região Centro-Oeste";"Total"
+"Cirúrgicos";9324;33146;49331;19489;11736;123026
+"Clínicos";13255;47026;70812;30647;14252;175992
+"Obstétrico";5340;16313;17257;6499;4546;49955
+"Pediátrico";5234;15936;15401;6003;4239;46813
+"Outras Especialidades";860;8943;23132;8750;4464;46149
+"Hospital/DIA";595;3425;7421;1757;1223;14421
+"Total";34608;124789;183354;73145;40460;456356
+ A partir da competência de Janeiro 2010 os dados referentes
+ a leitos Complementares foram retirados da consulta referente
+ a leitos de Internação, passando a constituir uma consulta específica conforme descrito na Nota Técnica.
+ Fonte: Ministério da Saúde - Cadastro Nacional dos Estabelecimentos de Saúde do Brasil - CNES
+ Nota:
+ - Os dados relativos ao Cadastro Nacional de Estabelecimentos de Saúde (CNES) exibidos no TABNET referem-se aos registros constantes no Banco de Dados Nacional do CNES com status ATIVO.
+ - A partir do processamento de junho de 2012, houve mudança na classificação da natureza e esfera dos estabelecimentos. Com isso, temos que:
+ 
+ Até maio de 2012 estas informações estão disponíveis como "Natureza" e "Esfera Administrativa".
+ De junho de 2012 a outubro de 2015, estão disponíveis tanto como "Natureza" e "Esfera Administrativa", como "Natureza Jurídica" e "Esfera Jurídica".
+ A partir de novembro de 2015, estão disponíveis como "Natureza Jurídica" e "Esfera Jurídica".
+ 
