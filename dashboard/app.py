@@ -1,122 +1,179 @@
-import dash
-from dash import dcc, html, dash_table
-from dash.dependencies import Input, Output
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
-import pandas as pd
-import numpy as np
-from tensorflow.keras.models import load_model
-from sklearn.preprocessing import MinMaxScaler
+from dash import Dash, dcc, html, Input, Output
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+import os
 
-# --- Carregar dados ---
-df = pd.read_csv(r'C:\Users\55819\Downloads\projeto_pyspark\data\dados_sih\df_final.csv')
-df['data'] = pd.to_datetime(df[['ano', 'mes']].rename(columns={'ano': 'year', 'mes': 'month'}).assign(day=1))
+# --- Leitura do CSV com previsão ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+df_path = os.path.join(BASE_DIR, '..', 'data', 'dados_sih', 'df_final.csv')
+df = pd.read_csv(df_path)
 
-# --- Preparar dropdowns ---
-anos = sorted(df['ano'].unique())
-meses = sorted(df['mes'].unique())
-regioes = sorted(df['regiao'].unique())
-especialidades = sorted(df['especialidade'].unique())
+# --- Gerar previsão para 2026 ---
+df['data'] = pd.to_datetime(df['ano'].astype(str) + '-' + df['mes'].astype(str).str.zfill(2))
+df_grouped = df.groupby(['data', 'especialidade'])['qtd_mes_especialidade'].sum().reset_index()
 
-# --- Inicializar app ---
-app = dash.Dash(__name__)
+especialidades = df_grouped['especialidade'].unique()
+forecast_list = []
+
+for esp in especialidades:
+    df_esp = df_grouped[df_grouped['especialidade'] == esp].set_index('data').asfreq('MS')
+    df_esp['qtd_mes_especialidade'].interpolate(inplace=True)
+
+    model = SARIMAX(df_esp['qtd_mes_especialidade'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))
+    results = model.fit(disp=False)
+
+    forecast = results.get_forecast(steps=12)
+    forecast_df = forecast.predicted_mean.reset_index()
+    forecast_df.columns = ['data', 'qtd_mes_especialidade']
+    forecast_df['especialidade'] = esp
+
+    # --- Garantir que todos os meses de 2026 estejam no forecast_df ---
+    idx_2026 = pd.date_range(start='2026-01-01', end='2026-12-01', freq='MS')
+    forecast_df = forecast_df.set_index('data').reindex(idx_2026).reset_index()
+    forecast_df.rename(columns={'index': 'data'}, inplace=True)
+    forecast_df['especialidade'] = esp
+
+    # Preencher NaNs se existirem (por segurança)
+    forecast_df['qtd_mes_especialidade'].interpolate(inplace=True)
+    
+    forecast_list.append(forecast_df)
+
+df_forecast = pd.concat(forecast_list, ignore_index=True)
+df_forecast['ano'] = df_forecast['data'].dt.year
+df_forecast['mes'] = df_forecast['data'].dt.month
+df_forecast['regiao'] = 'Previsão'
+
+# Concatenar previsões com dados reais
+df = pd.concat([
+    df[['ano', 'mes', 'especialidade', 'qtd_mes_especialidade', 'regiao']],
+    df_forecast[['ano', 'mes', 'especialidade', 'qtd_mes_especialidade', 'regiao']]
+], ignore_index=True)
+
+# --- Conversão de tipos ---
+df['ano'] = df['ano'].astype(str)
+df['mes'] = df['mes'].astype(str)
+
+# --- Inicialização do app ---
+app = Dash(__name__)
+app.title = 'Dashboard de Especialidades Hospitalares'
 
 # --- Layout ---
 app.layout = html.Div([
-    html.H1("Análise Interativa de Especialidades Hospitalares"),
+    html.H1('Análise Interativa de Especialidades Hospitalares'),
 
     html.Div([
-        html.Label("Ano"),
-        dcc.Dropdown(id='filtro-ano', options=[{"label": str(a), "value": a} for a in anos], multi=True),
+        html.Div([
+            html.Label('Ano'),
+            dcc.Dropdown(
+                options=[{'label': i, 'value': i} for i in sorted(df['ano'].unique())],
+                id='filtro_ano',
+                placeholder='Select...'
+            )
+        ], style={'width': '24%', 'display': 'inline-block'}),
 
-        html.Label("Mês"),
-        dcc.Dropdown(id='filtro-mes', options=[{"label": str(m), "value": m} for m in meses], multi=True),
+        html.Div([
+            html.Label('Mês'),
+            dcc.Dropdown(
+                options=[{'label': i, 'value': i} for i in sorted(df['mes'].unique())],
+                id='filtro_mes',
+                placeholder='Select...'
+            )
+        ], style={'width': '24%', 'display': 'inline-block'}),
 
-        html.Label("Região"),
-        dcc.Dropdown(id='filtro-regiao', options=[{"label": r, "value": r} for r in regioes], multi=True),
+        html.Div([
+            html.Label('Região'),
+            dcc.Dropdown(
+                options=[{'label': i, 'value': i} for i in df['regiao'].unique()],
+                id='filtro_regiao',
+                multi=True,
+                placeholder='Select...'
+            )
+        ], style={'width': '24%', 'display': 'inline-block'}),
 
-        html.Label("Especialidade"),
-        dcc.Dropdown(id='filtro-especialidade', options=[{"label": e, "value": e} for e in especialidades], value='Clínicos')
-    ], style={'columnCount': 2}),
+        html.Div([
+            html.Label('Especialidade'),
+            dcc.Dropdown(
+                options=[],
+                id='filtro_especialidade',
+                placeholder='Select...'
+            )
+        ], style={'width': '24%', 'display': 'inline-block'})
+    ]),
 
     dcc.Graph(id='grafico-linha'),
     dcc.Graph(id='grafico-distribuicao'),
     dcc.Graph(id='grafico-pizza'),
-
-    html.H3("Tabela Interativa"),
-    dash_table.DataTable(
-        id='tabela',
-        columns=[{"name": col, "id": col} for col in ['data', 'regiao', 'especialidade', 'qtd_mes_especialidade']],
-        page_size=10,
-        style_table={'overflowX': 'auto'}
-    )
 ])
 
-# --- Callback para atualizar tudo ---
+# --- Atualiza opções de especialidade ---
 @app.callback(
-    [
-        Output('grafico-linha', 'figure'),
-        Output('grafico-distribuicao', 'figure'),
-        Output('grafico-pizza', 'figure'),
-        Output('tabela', 'data')
-    ],
-    [
-        Input('filtro-ano', 'value'),
-        Input('filtro-mes', 'value'),
-        Input('filtro-regiao', 'value'),
-        Input('filtro-especialidade', 'value')
-    ]
+    Output('filtro_especialidade', 'options'),
+    Input('filtro_ano', 'value'),
+    Input('filtro_mes', 'value'),
+    Input('filtro_regiao', 'value'),
+)
+def atualizar_opcoes_especialidade(ano, mes, regiao):
+    dff = df.copy()
+    if ano:
+        dff = dff[dff['ano'] == ano]
+    if mes:
+        dff = dff[dff['mes'] == mes]
+    if regiao:
+        dff = dff[dff['regiao'].isin(regiao)]
+    especialidades = sorted(dff['especialidade'].unique())
+    return [{'label': i, 'value': i} for i in especialidades]
+
+# --- Atualiza os gráficos ---
+@app.callback(
+    Output('grafico-linha', 'figure'),
+    Output('grafico-distribuicao', 'figure'),
+    Output('grafico-pizza', 'figure'),
+    Input('filtro_ano', 'value'),
+    Input('filtro_mes', 'value'),
+    Input('filtro_regiao', 'value'),
+    Input('filtro_especialidade', 'value'),
 )
 def atualizar_dash(ano, mes, regiao, especialidade):
-    df_filtrado = df.copy()
-    if ano: df_filtrado = df_filtrado[df_filtrado['ano'].isin(ano)]
-    if mes: df_filtrado = df_filtrado[df_filtrado['mes'].isin(mes)]
-    if regiao: df_filtrado = df_filtrado[df_filtrado['regiao'].isin(regiao)]
-    if especialidade: df_filtrado = df_filtrado[df_filtrado['especialidade'] == especialidade]
+    dff = df.copy()
+    if ano:
+        dff = dff[dff['ano'] == ano]
+    if mes:
+        dff = dff[dff['mes'] == mes]
+    if regiao:
+        dff = dff[dff['regiao'].isin(regiao)]
+    if especialidade:
+        dff = dff[dff['especialidade'] == especialidade]
 
-    # --- Gráfico de linha com previsão ---
-    df_lstm = df_filtrado[['data', 'qtd_mes_especialidade']].set_index('data').sort_index()
-    if len(df_lstm) < 4:
-        fig1 = go.Figure()
+    df_linha = dff.groupby(['ano', 'mes'])['qtd_mes_especialidade'].sum().reset_index()
+    df_linha['data'] = df_linha['ano'] + '-' + df_linha['mes']
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(
+        x=df_linha['data'], y=df_linha['qtd_mes_especialidade'],
+        mode='lines+markers', name='Evolução'))
+    fig1.update_layout(title='Evolução Temporal',
+                       xaxis_title='Data', yaxis_title='Quantidade')
+
+    if 'regiao' in dff.columns:
+        graf_dist = px.bar(
+            dff,
+            x='especialidade', y='qtd_mes_especialidade',
+            title='Distribuição de Especialidades por Região',
+            color='regiao', barmode='group'
+        )
     else:
-        scaler = MinMaxScaler()
-        dados_norm = scaler.fit_transform(df_lstm)
-        model = load_model(r'C:\Users\55819\Downloads\projeto_pyspark\src\meu_modelo_lstm.h5', compile=False)
+        graf_dist = px.bar(title='Erro: coluna "regiao" não encontrada.')
 
-        n_steps = 3
-        input_seq = dados_norm[-n_steps:].reshape(1, n_steps, 1)
-        preds = []
-        for _ in range(12):
-            p = model.predict(input_seq)[0][0]
-            preds.append(p)
-            input_seq = np.append(input_seq[:, 1:, :], [[[p]]], axis=1)
+    graf_pizza = px.pie(
+        dff.groupby('especialidade')['qtd_mes_especialidade'].sum().reset_index(),
+        values='qtd_mes_especialidade',
+        names='especialidade',
+        title='Proporção por Especialidade'
+    )
 
-        preds_inv = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
-        future_dates = pd.date_range(df_lstm.index[-1] + pd.DateOffset(months=1), periods=12, freq='MS')
-        df_future = pd.DataFrame({'data': future_dates, 'Predição': preds_inv}).set_index('data')
-        df_plot = pd.concat([df_lstm, df_future], axis=0)
+    return fig1, graf_dist, graf_pizza
 
-        fig1 = go.Figure()
-        fig1.add_trace(go.Scatter(x=df_lstm.index, y=df_lstm['qtd_mes_especialidade'], name='Real'))
-        fig1.add_trace(go.Scatter(x=df_future.index, y=df_future['Predição'], name='Previsão'))
-        fig1.update_layout(title='Previsão com LSTM', xaxis_title='Data', yaxis_title='Quantidade')
-
-    # --- Gráfico de barras: Total por especialidade ---
-    graf_dist = px.bar(
-        df[df['regiao'].isin(regiao) if regiao else df['regiao'].unique()],
-        x='especialidade', y='qtd_mes_especialidade',
-        title='Distribuição de especialidades por região',
-        color='regiao', barmode='group')
-
-    # --- Gráfico de pizza ---
-    pizza = df_filtrado.groupby('especialidade')['qtd_mes_especialidade'].sum().reset_index()
-    graf_pizza = px.pie(pizza, names='especialidade', values='qtd_mes_especialidade',
-                        title='Participação das especialidades')
-
-    # --- Tabela ---
-    tabela_data = df_filtrado[['data', 'regiao', 'especialidade', 'qtd_mes_especialidade']].to_dict('records')
-
-    return fig1, graf_dist, graf_pizza, tabela_data
-
+# --- Executa o servidor ---
 if __name__ == '__main__':
     app.run(debug=True)
