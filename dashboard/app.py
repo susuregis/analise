@@ -53,7 +53,7 @@ df = pd.concat([
 
 # --- Conversão de tipos ---
 df['ano'] = df['ano'].astype(str)
-df['mes'] = df['mes'].astype(str)
+# df['mes'] continua como inteiro
 
 # --- Inicialização do app ---
 app = Dash(__name__)
@@ -76,7 +76,7 @@ app.layout = html.Div([
         html.Div([
             html.Label('Mês'),
             dcc.Dropdown(
-                options=[{'label': i, 'value': i} for i in sorted(df['mes'].unique())],
+                options=[{'label': str(i), 'value': i} for i in sorted(df['mes'].unique())],
                 id='filtro_mes',
                 placeholder='Select...'
             )
@@ -147,7 +147,7 @@ def atualizar_dash(ano, mes, regiao, especialidade):
         dff = dff[dff['especialidade'] == especialidade]
 
     df_linha = dff.groupby(['ano', 'mes'])['qtd_mes_especialidade'].sum().reset_index()
-    df_linha['data'] = df_linha['ano'] + '-' + df_linha['mes']
+    df_linha['data'] = df_linha['ano'] + '-' + df_linha['mes'].astype(str).str.zfill(2)
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(
         x=df_linha['data'], y=df_linha['qtd_mes_especialidade'],
