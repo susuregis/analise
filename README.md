@@ -43,9 +43,6 @@ O modelo consiste em:
 - Uma camada LSTM com 50 unidades e função de ativação ReLU
 - Uma camada Dense de saída para previsão de um único valor
 
-### Treinamento
-- **Otimizador**: Adam
-- **Função de Perda**: Mean Squared Error (MSE)
 
 
 ### Avaliação do Modelo
