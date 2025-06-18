@@ -1,16 +1,37 @@
+import os
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 from dash import Dash, dcc, html, Input, Output
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-import os
+from flask import Flask, request, send_from_directory
 
-# --- Leitura do CSV com previsão ---
+# --- Configuração inicial ---
+VALID_TOKEN = 'secrettoken123'
+
+# --- Criação do servidor Flask base ---
+server = Flask(__name__)
+
+# --- Rota para servir o login.html, script.js e style.css ---
+@server.route('/autent/<path:filename>')
+def autent_files(filename):
+    autent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'autent'))
+    return send_from_directory(autent_path, filename)
+
+# --- Proteção com token ---
+@server.before_request
+def verificar_token():
+    # Ignora rotas internas do Dash (importante!)
+    if request.path == '/' or request.path == '/favicon.ico':
+        token = request.args.get('token')
+        if token != VALID_TOKEN:
+            return "Acesso negado. Volte para a <a href='/autent/login.html'>tela de login</a>."
+
+# --- Leitura do CSV e geração da previsão ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 df_path = os.path.join(BASE_DIR, '..', 'data', 'dados_sih', 'df_final.csv')
 df = pd.read_csv(df_path)
 
-# --- Gerar previsão para 2026 ---
 df['data'] = pd.to_datetime(df['ano'].astype(str) + '-' + df['mes'].astype(str).str.zfill(2))
 df_grouped = df.groupby(['data', 'especialidade'])['qtd_mes_especialidade'].sum().reset_index()
 
@@ -29,15 +50,12 @@ for esp in especialidades:
     forecast_df.columns = ['data', 'qtd_mes_especialidade']
     forecast_df['especialidade'] = esp
 
-    # --- Garantir que todos os meses de 2026 estejam no forecast_df ---
     idx_2026 = pd.date_range(start='2026-01-01', end='2026-12-01', freq='MS')
     forecast_df = forecast_df.set_index('data').reindex(idx_2026).reset_index()
     forecast_df.rename(columns={'index': 'data'}, inplace=True)
     forecast_df['especialidade'] = esp
-
-    # Preencher NaNs se existirem (por segurança)
     forecast_df['qtd_mes_especialidade'].interpolate(inplace=True)
-    
+
     forecast_list.append(forecast_df)
 
 df_forecast = pd.concat(forecast_list, ignore_index=True)
@@ -45,18 +63,15 @@ df_forecast['ano'] = df_forecast['data'].dt.year
 df_forecast['mes'] = df_forecast['data'].dt.month
 df_forecast['regiao'] = 'Previsão'
 
-# Concatenar previsões com dados reais
 df = pd.concat([
     df[['ano', 'mes', 'especialidade', 'qtd_mes_especialidade', 'regiao']],
     df_forecast[['ano', 'mes', 'especialidade', 'qtd_mes_especialidade', 'regiao']]
 ], ignore_index=True)
 
-# --- Conversão de tipos ---
 df['ano'] = df['ano'].astype(str)
-# df['mes'] continua como inteiro
 
-# --- Inicialização do app ---
-app = Dash(__name__)
+# --- Inicialização do app Dash ---
+app = Dash(__name__, server=server)
 app.title = 'Dashboard de Especialidades Hospitalares'
 
 # --- Layout ---
@@ -155,15 +170,12 @@ def atualizar_dash(ano, mes, regiao, especialidade):
     fig1.update_layout(title='Evolução Temporal',
                        xaxis_title='Data', yaxis_title='Quantidade')
 
-    if 'regiao' in dff.columns:
-        graf_dist = px.bar(
-            dff,
-            x='especialidade', y='qtd_mes_especialidade',
-            title='Distribuição de Especialidades por Região',
-            color='regiao', barmode='group'
-        )
-    else:
-        graf_dist = px.bar(title='Erro: coluna "regiao" não encontrada.')
+    graf_dist = px.bar(
+        dff,
+        x='especialidade', y='qtd_mes_especialidade',
+        title='Distribuição de Especialidades por Região',
+        color='regiao', barmode='group'
+    )
 
     graf_pizza = px.pie(
         dff.groupby('especialidade')['qtd_mes_especialidade'].sum().reset_index(),
