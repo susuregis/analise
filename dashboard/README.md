@@ -91,3 +91,9 @@ Será redirecionado para http://localhost:8050?token=secrettoken123
 O Dash abre normalmente
 
 Se tentar acessar sem token: acesso negado.
+
+## Possiveis erros 
+
+Caso tenha problemas com o pandas na hora de rodar o app.py, use algo do tipo \Python312\python.exe app.py
+(Caso o python esteja em local diferente de onde você fez o pip install pandas)
+
