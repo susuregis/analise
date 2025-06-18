@@ -1,3 +1,13 @@
+## Página de Login
+
+Site possui página de login criptografada com token de verificação. Sem o correto acesso, não é possível entrar na página do Dash
+
+Acesso:
+e-mail: admin@teste.com
+senha:123456 
+
+OBS: Caso tente acessar diretamente na página do Dash, também não sera possível acessar sem antes passar pela tela de Login.
+
 # Dashboard de Análise de Internações SUS
 
 Esta pasta contém os dashboards para visualização e análise dos dados de internações do SUS.
@@ -63,3 +73,21 @@ Para habilitar as previsões LSTM, você precisa:
 4. O arquivo do modelo em `src/meu_modelo_lstm.h5`
 
 Use o script `configurar_ambiente_lstm.bat` para configurar automaticamente o ambiente.
+
+## Como rodar
+
+Rode o app com python app.py
+
+Acesse http://localhost:8050/autent/login.html
+
+Login com:
+
+Email: admin@teste.com
+
+Senha: 123456
+
+Será redirecionado para http://localhost:8050?token=secrettoken123
+
+O Dash abre normalmente
+
+Se tentar acessar sem token: acesso negado.
